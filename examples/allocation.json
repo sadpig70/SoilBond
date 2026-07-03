@@ -1,0 +1,30 @@
+{
+  "parcels": [
+    {
+      "area_hectares": 20.0,
+      "carbon_reduction_tco2": 150.0,
+      "parcel_id": "P-ALPHA",
+      "resilience_score": 0.85
+    },
+    {
+      "area_hectares": 12.0,
+      "carbon_reduction_tco2": 80.0,
+      "parcel_id": "P-BETA",
+      "resilience_score": 0.92
+    },
+    {
+      "area_hectares": 35.0,
+      "carbon_reduction_tco2": 220.0,
+      "parcel_id": "P-GAMMA",
+      "resilience_score": 0.7
+    },
+    {
+      "area_hectares": 8.0,
+      "carbon_reduction_tco2": 45.0,
+      "parcel_id": "P-DELTA",
+      "resilience_score": 0.95
+    }
+  ],
+  "per_parcel_cap": 35000.0,
+  "pool_size": 100000.0
+}
