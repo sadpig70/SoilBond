@@ -12,12 +12,15 @@ optional per-parcel cap whose excess is redistributed to uncapped parcels.
 
 import math
 
+REFERENCE_CARBON_DENSITY = 10.0
+
 
 def score_parcel(parcel_id, carbon_reduction_tco2, resilience_score, area_hectares):
     """Score one agricultural parcel.
 
     - carbon_density  = carbon_reduction_tco2 / area_hectares
-    - combined_score  = sqrt(carbon_reduction_tco2) * resilience_score
+    - density_factor  = sqrt(carbon_density / reference_density)
+    - combined_score  = sqrt(carbon_reduction_tco2) * resilience_score * density_factor
 
     Returns a deterministic dict describing the parcel and its scores.
     """
@@ -29,13 +32,16 @@ def score_parcel(parcel_id, carbon_reduction_tco2, resilience_score, area_hectar
         raise ValueError("resilience_score must be within [0.0, 1.0]")
 
     carbon_density = carbon_reduction_tco2 / area_hectares
-    combined_score = math.sqrt(carbon_reduction_tco2) * resilience_score
+    density_factor = math.sqrt(carbon_density / REFERENCE_CARBON_DENSITY)
+    combined_score = math.sqrt(carbon_reduction_tco2) * resilience_score * density_factor
     return {
         "parcel_id": parcel_id,
         "carbon_reduction_tco2": carbon_reduction_tco2,
         "resilience_score": resilience_score,
         "area_hectares": area_hectares,
         "carbon_density": carbon_density,
+        "reference_carbon_density": REFERENCE_CARBON_DENSITY,
+        "density_factor": density_factor,
         "combined_score": combined_score,
     }
 
@@ -53,7 +59,17 @@ def allocate_matching_pool(parcels, pool_size, per_parcel_cap=None):
 
     Returns a deterministic allocation document.
     """
+    if not isinstance(parcels, list):
+        raise TypeError("parcels must be a list")
+    if pool_size < 0:
+        raise ValueError("pool_size must be non-negative")
+    if per_parcel_cap is not None and per_parcel_cap < 0:
+        raise ValueError("per_parcel_cap must be non-negative")
+
     n = len(parcels)
+    for i, parcel in enumerate(parcels):
+        if "combined_score" not in parcel:
+            raise ValueError(f"parcels[{i}] missing combined_score")
     scores = [p["combined_score"] for p in parcels]
     weights = [s ** 2 for s in scores]
     total_weight = sum(weights)
@@ -76,7 +92,7 @@ def allocate_matching_pool(parcels, pool_size, per_parcel_cap=None):
             if unlocked_weight <= 0:
                 break
             locked_total = per_parcel_cap * len(locked)
-            remaining = pool_size - locked_total
+            remaining = max(0.0, pool_size - locked_total)
             shares = {}
             new_locks = []
             for i in unlocked:
@@ -98,17 +114,24 @@ def allocate_matching_pool(parcels, pool_size, per_parcel_cap=None):
     for i, p in enumerate(parcels):
         allocations.append({
             "parcel_id": p["parcel_id"],
+            "carbon_reduction_tco2": p.get("carbon_reduction_tco2", 0.0),
+            "resilience_score": p.get("resilience_score", 0.0),
+            "area_hectares": p.get("area_hectares", 0.0),
+            "carbon_density": p.get("carbon_density", 0.0),
             "score": scores[i],
             "raw_match": raw_matches[i],
             "capped": capped_flags[i],
             "final_match": final[i],
         })
     total_allocated = sum(a["final_match"] for a in allocations)
+    unallocated_amount = max(0.0, pool_size - total_allocated)
     return {
         "pool_size": pool_size,
         "per_parcel_cap": per_parcel_cap,
         "allocations": allocations,
         "total_allocated": total_allocated,
+        "unallocated_amount": unallocated_amount,
+        "cap_exhausted": bool(per_parcel_cap is not None and unallocated_amount > 0),
     }
 
 
@@ -129,17 +152,20 @@ def render_report(result):
         f"- pool_size: {pool_size:.2f}",
         f"- per_parcel_cap: {cap_display}",
         f"- total_allocated: {total_allocated:.2f}",
+        f"- unallocated_amount: {result.get('unallocated_amount', 0.0):.2f}",
+        f"- cap_exhausted: {result.get('cap_exhausted', False)}",
         f"- parcels: {len(allocations)}",
         "",
         "## Allocations",
         "",
-        "| parcel_id | score | raw_match | capped | final_match |",
-        "|---|---|---|---|---|",
+        "| parcel_id | carbon_density | score | raw_match | capped | final_match |",
+        "|---|---|---|---|---|---|",
     ]
     for a in allocations:
         capped_str = "yes" if a.get("capped") else "no"
         lines.append(
             f"| {a['parcel_id']} "
+            f"| {a.get('carbon_density', 0.0):.4f} "
             f"| {a['score']:.4f} "
             f"| {a['raw_match']:.2f} "
             f"| {capped_str} "

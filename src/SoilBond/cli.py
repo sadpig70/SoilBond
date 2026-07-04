@@ -51,6 +51,12 @@ def cmd_score(args):
 
 def cmd_allocate(args):
     doc = _load_json(args.input)
+    result = _allocate_from_config(doc)
+    _dump_json(result, args.out)
+    return 0
+
+
+def _allocate_from_config(doc):
     pool_size = doc["pool_size"]
     cap = doc.get("per_parcel_cap")
     parcels = [
@@ -62,13 +68,13 @@ def cmd_allocate(args):
         )
         for p in doc["parcels"]
     ]
-    result = allocate_matching_pool(parcels, pool_size, cap)
-    _dump_json(result, args.out)
-    return 0
+    return allocate_matching_pool(parcels, pool_size, cap)
 
 
 def cmd_report(args):
     doc = _load_json(args.input)
+    if "parcels" in doc and "pool_size" in doc:
+        doc = _allocate_from_config(doc)
     text = render_report(doc)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:

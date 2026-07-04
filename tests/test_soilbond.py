@@ -15,7 +15,12 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 ENV = {**os.environ, "PYTHONPATH": SRC}
 
-from SoilBond.core import allocate_matching_pool, render_report, score_parcel  # noqa: E402
+from SoilBond.core import (  # noqa: E402
+    REFERENCE_CARBON_DENSITY,
+    allocate_matching_pool,
+    render_report,
+    score_parcel,
+)
 from SoilBond.samples import default_pool, parcels  # noqa: E402
 
 
@@ -27,7 +32,9 @@ class TestScoreParcel(unittest.TestCase):
         self.assertEqual(result["resilience_score"], 0.85)
         self.assertEqual(result["area_hectares"], 20.0)
         self.assertAlmostEqual(result["carbon_density"], 150.0 / 20.0)
-        expected_score = math.sqrt(150.0) * 0.85
+        density_factor = math.sqrt((150.0 / 20.0) / REFERENCE_CARBON_DENSITY)
+        expected_score = math.sqrt(150.0) * 0.85 * density_factor
+        self.assertAlmostEqual(result["density_factor"], density_factor)
         self.assertAlmostEqual(result["combined_score"], expected_score)
 
     def test_repeated_call_is_identical(self):
@@ -74,6 +81,8 @@ class TestAllocateMatchingPool(unittest.TestCase):
         cap = 25000.0
         result = allocate_matching_pool(scored, pool_size=100000.0, per_parcel_cap=cap)
         self.assertAlmostEqual(result["total_allocated"], 100000.0, places=4)
+        self.assertAlmostEqual(result["unallocated_amount"], 0.0, places=4)
+        self.assertFalse(result["cap_exhausted"])
         for a in result["allocations"]:
             self.assertLessEqual(a["final_match"], cap + 1e-6)
         at_least_one_capped = any(a["capped"] for a in result["allocations"])
@@ -84,6 +93,13 @@ class TestAllocateMatchingPool(unittest.TestCase):
         a = allocate_matching_pool(scored, 50000.0, 20000.0)
         b = allocate_matching_pool(scored, 50000.0, 20000.0)
         self.assertEqual(a, b)
+
+    def test_unallocated_amount_when_cap_exhausted(self):
+        scored = self._scored()
+        result = allocate_matching_pool(scored, pool_size=100000.0, per_parcel_cap=10000.0)
+        self.assertAlmostEqual(result["total_allocated"], 40000.0, places=4)
+        self.assertAlmostEqual(result["unallocated_amount"], 60000.0, places=4)
+        self.assertTrue(result["cap_exhausted"])
 
 
 class TestRenderReport(unittest.TestCase):
